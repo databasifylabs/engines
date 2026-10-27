@@ -5,6 +5,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 versions="$root/versions.json"
 content_label=io.databasify.content-hash
 reusable_builds=30
+docker_hub=registry-1.docker.io
 
 usage() {
     cat >&2 <<'EOF'
@@ -19,6 +20,8 @@ usage: images.sh <command>
                                 point the comma separated tags at the sources (DRY_RUN=true only prints)
   build <key> [buildx args...]  build the image locally from the repository
   smoke <image> <engine>        tool contract, info and engine start/stop checks
+  refresh [key...]              move base images, copied images, packages and Go modules to their newest
+                                patch within the pinned line, then print the changes as Markdown
 EOF
     exit 64
 }
@@ -67,12 +70,18 @@ cmd_args() {
     ' "$versions"
 }
 
+image_files_of() {
+    local dir="$root/images/$1"
+    printf '%s\n' "$dir/Dockerfile"
+    [ ! -f "$dir/repositories.sh" ] || printf '%s\n' "$dir/repositories.sh"
+}
+
 cmd_hash() {
     local engine
     engine=$(engine_of "$1")
     {
         sources_hash
-        sha < "$root/images/$engine/Dockerfile"
+        image_files_of "$engine" | xargs cat | sha
         jq -cS --arg key "$1" '{registry, wrapper, go, image: .images[$key]}' "$versions"
     } | sha
 }
@@ -222,6 +231,145 @@ smoke_cleanup() {
     rmdir "$smoke_work" 2> /dev/null || true
 }
 
+escape() {
+    sed 's/[][\.*^$+?(){}|/]/\\&/g' <<< "$1"
+}
+
+dots_in() {
+    tr -cd . <<< "$1" | wc -c | tr -d ' '
+}
+
+update() {
+    local filter=$1 updated
+    shift
+    updated=$(mktemp)
+    jq "$@" "$filter" "$versions" > "$updated"
+    cat "$updated" > "$versions"
+    rm -f "$updated"
+}
+
+registry_path_of() {
+    local image=$1 first=${1%%/*}
+    if [ "$first" = "$image" ]; then
+        printf '%s/library/%s' "$docker_hub" "$image"
+    elif [[ $first == *[.:]* ]]; then
+        printf '%s' "$image"
+    else
+        printf '%s/%s' "$docker_hub" "$image"
+    fi
+}
+
+newest_tag_of() {
+    registry_tags "$(registry_path_of "$1")" | grep -E "$2" | sort -V | tail -n 1 || true
+}
+
+patch_pattern_of() {
+    [[ $1 =~ ^(.*\.)([0-9]+)(.*)$ ]] || { echo "$1 has no patch number" >&2; return 1; }
+    printf '^%s[0-9]+%s$' "$(escape "${BASH_REMATCH[1]}")" "$(escape "${BASH_REMATCH[3]}")"
+}
+
+release_pattern_of() {
+    local key=$1 line release suffix
+    line=$(field "$key" .line)
+    release=$(field "$key" .release)
+    suffix=$(field "$key" .base.tag)
+    suffix=${suffix#"$release"}
+    printf '^%s(\\.[0-9]+){%d}%s$' "$(escape "$line")" "$(( $(dots_in "$release") - $(dots_in "$line") ))" "$(escape "$suffix")"
+}
+
+pin_image() {
+    local path=$1 tag=$2 image digest
+    image=$(jq -er "$path.image" "$versions")
+    digest=$(published_digest "$image:$tag")
+    update "$path.tag = \$tag | $path.digest = \$digest" --arg tag "$tag" --arg digest "$digest"
+}
+
+refresh_pinned_image() {
+    local path=$1 image tag newest
+    image=$(jq -er "$path.image" "$versions")
+    tag=$(jq -er "$path.tag" "$versions")
+    newest=$(newest_tag_of "$image" "$(patch_pattern_of "$tag")")
+    pin_image "$path" "${newest:?no tag of $image matches $tag}"
+}
+
+refresh_base() {
+    local key=$1 path=".images[\"$1\"]" release tag newest
+    release=$(field "$key" .release)
+    tag=$(field "$key" .base.tag)
+    newest=$(newest_tag_of "$(field "$key" .base.image)" "$(release_pattern_of "$key")")
+    pin_image "$path.base" "${newest:?no release of $key is published}"
+    update "$path.release = \$release" --arg release "${newest%"${tag#"$release"}"}"
+}
+
+refresh_copies() {
+    local key=$1 name
+    for name in $(jq -r --arg key "$key" '.images[$key].copies // {} | keys[]' "$versions"); do
+        refresh_pinned_image ".images[\"$key\"].copies[\"$name\"]"
+    done
+}
+
+refresh_packages() {
+    local key=$1 base name version
+    local names=()
+    while IFS= read -r name; do
+        names+=("$name")
+    done < <(jq -r --arg key "$key" '.images[$key].packages // {} | keys[]' "$versions")
+    [ ${#names[@]} -gt 0 ] || return 0
+    base=$(jq -er --arg key "$key" '.images[$key].base | "\(.image):\(.tag)@\(.digest)"' "$versions")
+    while IFS='=' read -r name version; do
+        if [ -z "$version" ] || [ "$version" = "(none)" ]; then
+            echo "$key: no installable version of $name" >&2
+            return 1
+        fi
+        update ".images[\$key].packages[\$name] = \$version" --arg key "$key" --arg name "$name" --arg version "$version"
+    done < <(docker run --rm --entrypoint bash --volume "$root/images:/images:ro" "$base" /images/packages.sh "$(engine_of "$key")" "${names[@]}")
+}
+
+newest_module_version_of() {
+    local module=$1 current=$2
+    curl -fsS "https://proxy.golang.org/$module/@v/list" \
+        | grep -E "^v${current%%.*}\.[0-9]+\.[0-9]+\$" | sort -V | tail -n 1 | sed 's/^v//'
+}
+
+refresh_modules() {
+    local key=$1 name module current newest
+    for name in $(jq -r --arg key "$key" '.images[$key].modules // {} | keys[]' "$versions"); do
+        module=$(field "$key" ".modules[\"$name\"].module")
+        current=$(field "$key" ".modules[\"$name\"].version")
+        newest=$(newest_module_version_of "$module" "$current")
+        update ".images[\$key].modules[\$name].version = \$version" --arg key "$key" --arg name "$name" --arg version "${newest:?no release of $module}"
+    done
+}
+
+changes_since() {
+    jq -rn --slurpfile before "$1" --slurpfile after "$versions" '
+        def short: if type == "string" and startswith("sha256:") then .[0:19] else . end;
+        $after[0] | paths(scalars) as $path
+        | ($before[0] | getpath($path)) as $old
+        | ($after[0] | getpath($path)) as $new
+        | select($old != $new)
+        | "- `\($path | map(tostring) | join("."))`: `\($old | short)` → `\($new | short)`"'
+}
+
+cmd_refresh() {
+    local before key
+    [ $# -gt 0 ] || while IFS= read -r key; do set -- "$@" "$key"; done < <(jq -r '.images | keys[]' "$versions")
+    for key in "$@"; do
+        field "$key" "" > /dev/null || { echo "unknown image key $key" >&2; return 64; }
+    done
+    before=$(mktemp)
+    cp "$versions" "$before"
+    refresh_pinned_image .go
+    for key in "$@"; do
+        refresh_base "$key"
+        refresh_copies "$key"
+        refresh_packages "$key"
+        refresh_modules "$key"
+    done
+    changes_since "$before"
+    rm -f "$before"
+}
+
 [ $# -ge 1 ] || usage
 command=$1
 shift
@@ -233,5 +381,6 @@ case "$command" in
     tag) [ $# -ge 3 ] || usage; cmd_tag "$@" ;;
     build) [ $# -ge 1 ] || usage; cmd_build "$@" ;;
     smoke) [ $# -eq 2 ] || usage; cmd_smoke "$@" ;;
+    refresh) cmd_refresh "$@" ;;
     *) usage ;;
 esac

@@ -3,3 +3,4 @@
 !cmd/
 !internal/
 **/*_test.go
+!images/mysql/repositories.sh

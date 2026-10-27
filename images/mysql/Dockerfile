@@ -40,16 +40,9 @@ FROM ${BASE_IMAGE}
 ARG RELEASE
 ARG WRAPPER_VERSION
 ARG PACKAGES
-RUN set -eux; \
-    printf '%s\n' \
-        '[percona-pxb-84-lts]' \
-        'name=Percona XtraBackup 8.4 LTS' \
-        'baseurl=https://repo.percona.com/pxb-84-lts/yum/release/9/RPMS/$basearch' \
-        'enabled=1' \
-        'gpgcheck=1' \
-        > /etc/yum.repos.d/percona-pxb-84-lts.repo; \
-    rpm --import https://repo.percona.com/yum/PERCONA-PACKAGING-KEY; \
-    rpm -q gpg-pubkey-8507efa5; \
+RUN --mount=type=bind,source=images/mysql/repositories.sh,target=/tmp/repositories.sh \
+    set -eux; \
+    bash /tmp/repositories.sh; \
     microdnf install -y --setopt=install_weak_deps=0 $(printf '%s\n' $PACKAGES | sed 's/=/-/'); \
     microdnf clean all; \
     rm -f /usr/local/bin/gosu
