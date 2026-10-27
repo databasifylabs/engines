@@ -1,0 +1,11 @@
+# Python packages bundled in MySQL Shell 8.4.10 (/usr/lib/mysqlsh), the newest Oracle publishes.
+# Only a new MySQL Shell release can fix them. Remove these lines once it ships.
+GHSA-6q48-6c7w-9gw2
+GHSA-537c-gmf6-5ccf
+CVE-2026-27459
+CVE-2026-44431
+CVE-2026-44432
+CVE-2026-69247
+CVE-2026-69249
+CVE-2026-97687
+CVE-2026-97689

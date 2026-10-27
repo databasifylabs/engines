@@ -1,0 +1,182 @@
+name: images
+
+on:
+  push:
+    branches:
+      - "**"
+    paths:
+      - cmd/**
+      - internal/**
+      - images/**
+      - go.mod
+      - versions.json
+      - .github/workflows/images.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      builds: ${{ steps.plan.outputs.builds }}
+      retags: ${{ steps.plan.outputs.retags }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare content hashes with the published images
+        id: plan
+        env:
+          MAIN: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          plans=$(
+            for key in $(images/images.sh keys | jq -r '.[]'); do
+              images/images.sh plan "$key" "$GITHUB_SHA" "$MAIN" \
+                | jq -Rn --arg key "$key" '[inputs | capture("^(?<name>[^=]+)=(?<value>.*)$") | {(.name): .value}] | add + {key: $key}'
+            done | jq -sc .
+          )
+          jq . <<< "$plans"
+          echo "builds=$(jq -c '[.[] | select(.action == "build")]' <<< "$plans")" >> "$GITHUB_OUTPUT"
+          echo "retags=$(jq -c '[.[] | select(.action == "retag")]' <<< "$plans")" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.builds != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.plan.outputs.builds) }}
+        platform:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 60
+    env:
+      KEY: ${{ matrix.image.key }}
+      ENGINE: ${{ matrix.image.engine }}
+      REPOSITORY: ${{ matrix.image.repository }}
+      ARCH: ${{ matrix.platform.arch }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Create a buildx builder
+        run: docker buildx create --name databasify --driver docker-container --use
+
+      - name: Build
+        run: images/images.sh build "$KEY" --platform "linux/$ARCH" --load --tag "smoke:$KEY"
+
+      - name: Smoke test
+        run: images/images.sh smoke "smoke:$KEY" "$ENGINE"
+
+      - name: Scan for fixable critical and high vulnerabilities
+        run: |
+          ignore=()
+          [ -f "images/$ENGINE/.trivyignore" ] && ignore=(--ignorefile "/repo/images/$ENGINE/.trivyignore")
+          docker run --rm --volume /var/run/docker.sock:/var/run/docker.sock --volume "$PWD:/repo:ro" "$TRIVY_IMAGE" \
+            image --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 "${ignore[@]}" "smoke:$KEY"
+
+      - name: Log in to GHCR
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Push by digest
+        run: |
+          images/images.sh build "$KEY" --platform "linux/$ARCH" \
+            --output "type=image,name=$REPOSITORY,push-by-digest=true,name-canonical=true,push=true" \
+            --metadata-file metadata.json
+          mkdir digests
+          jq -er '."containerimage.digest"' metadata.json > "digests/$ARCH"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests-${{ matrix.image.key }}-${{ matrix.platform.arch }}
+          path: digests/
+          retention-days: 1
+
+  publish:
+    needs: [plan, build]
+    if: always() && needs.plan.outputs.builds != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.plan.outputs.builds) }}
+    runs-on: ubuntu-24.04
+    env:
+      KEY: ${{ matrix.image.key }}
+      REPOSITORY: ${{ matrix.image.repository }}
+      TAGS: ${{ matrix.image.tags }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download digests
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digests-${{ matrix.image.key }}-*
+          merge-multiple: true
+          path: digests
+
+      - name: Log in to GHCR
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Tag the multi-arch image
+        run: |
+          if [ ! -s digests/amd64 ] || [ ! -s digests/arm64 ]; then
+            echo "a platform build for $KEY failed"
+            exit 1
+          fi
+          images/images.sh tag "$REPOSITORY" "$TAGS" "$REPOSITORY@$(cat digests/amd64)" "$REPOSITORY@$(cat digests/arm64)"
+          echo "published $REPOSITORY as $TAGS"
+
+  retag:
+    needs: plan
+    if: needs.plan.outputs.retags != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.plan.outputs.retags) }}
+    runs-on: ubuntu-24.04
+    env:
+      REPOSITORY: ${{ matrix.image.repository }}
+      SOURCE: ${{ matrix.image.source }}
+      TAGS: ${{ matrix.image.tags }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Log in to GHCR
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Point the tags at the build that has the same content
+        run: |
+          images/images.sh tag "$REPOSITORY" "$TAGS" "$REPOSITORY@$SOURCE"
+          echo "tagged $REPOSITORY@$SOURCE as $TAGS"

@@ -1,0 +1,7 @@
+{
+  "processes": [
+    {"name": "prepare", "type": "oneshot", "enabled": true, "argv": ["install", "-d", "-o", "valkey", "-g", "valkey", "-m", "750", "/srv/valkey/data"]},
+    {"name": "server", "enabled": true, "after": ["prepare"], "user": "valkey", "restart": "always", "restartSec": "2s", "stopTimeout": "30s",
+     "argv": ["valkey-server", "--port", "56379", "--bind", "127.0.0.1", "--dir", "/srv/valkey/data", "--save", "", "--appendonly", "no"]}
+  ]
+}

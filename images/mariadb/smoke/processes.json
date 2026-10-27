@@ -1,0 +1,9 @@
+{
+  "processes": [
+    {"name": "prepare", "type": "oneshot", "enabled": true, "argv": ["install", "-d", "-o", "mysql", "-g", "mysql", "-m", "750", "/srv/mariadb/data", "/srv/mariadb/run"]},
+    {"name": "initialize", "type": "oneshot", "enabled": true, "after": ["prepare"], "user": "mysql",
+     "argv": ["sh", "-c", "[ -d /srv/mariadb/data/mysql ] || exec mariadb-install-db --no-defaults --datadir=/srv/mariadb/data --skip-test-db --auth-root-authentication-method=normal"]},
+    {"name": "server", "enabled": true, "after": ["initialize"], "user": "mysql", "restart": "always", "restartSec": "2s", "stopTimeout": "60s",
+     "argv": ["mariadbd", "--no-defaults", "--datadir=/srv/mariadb/data", "--socket=/srv/mariadb/run/mariadbd.sock", "--pid-file=/srv/mariadb/run/mariadbd.pid", "--port=53306", "--bind-address=127.0.0.1"]}
+  ]
+}

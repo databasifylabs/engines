@@ -1,0 +1,7 @@
+{
+  "processes": [
+    {"name": "prepare", "type": "oneshot", "enabled": true, "argv": ["install", "-d", "-o", "redis", "-g", "redis", "-m", "750", "/srv/redis/data"]},
+    {"name": "server", "enabled": true, "after": ["prepare"], "user": "redis", "restart": "always", "restartSec": "2s", "stopTimeout": "30s",
+     "argv": ["redis-server", "--port", "56379", "--bind", "127.0.0.1", "--dir", "/srv/redis/data", "--save", "", "--appendonly", "no"]}
+  ]
+}

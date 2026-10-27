@@ -1,0 +1,9 @@
+{
+  "processes": [
+    {"name": "prepare", "type": "oneshot", "enabled": true, "argv": ["install", "-d", "-o", "mysql", "-g", "mysql", "-m", "750", "/srv/mysql/data", "/srv/mysql/run"]},
+    {"name": "initialize", "type": "oneshot", "enabled": true, "after": ["prepare"], "user": "mysql",
+     "argv": ["sh", "-c", "[ -d /srv/mysql/data/mysql ] || exec mysqld --no-defaults --initialize-insecure --datadir=/srv/mysql/data"]},
+    {"name": "server", "enabled": true, "after": ["initialize"], "user": "mysql", "restart": "always", "restartSec": "2s", "stopTimeout": "60s",
+     "argv": ["mysqld", "--no-defaults", "--datadir=/srv/mysql/data", "--socket=/srv/mysql/run/mysqld.sock", "--pid-file=/srv/mysql/run/mysqld.pid", "--port=53306", "--bind-address=127.0.0.1", "--mysqlx=OFF"]}
+  ]
+}

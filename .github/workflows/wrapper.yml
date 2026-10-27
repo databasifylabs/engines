@@ -1,0 +1,39 @@
+name: wrapper
+
+on:
+  push:
+    paths:
+      - cmd/**
+      - internal/**
+      - go.mod
+      - .github/workflows/wrapper.yml
+  pull_request:
+    paths:
+      - cmd/**
+      - internal/**
+      - go.mod
+      - .github/workflows/wrapper.yml
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Format, vet and race-test in the pinned Go image
+        run: |
+          image=$(jq -er '.go | "\(.image):\(.tag)@\(.digest)"' versions.json)
+          docker run --rm --volume "$PWD:/src" --workdir /src "$image" sh -ec '
+            unformatted=$(gofmt -l .)
+            [ -z "$unformatted" ] || { echo "gofmt needed: $unformatted"; exit 1; }
+            go vet ./...
+            go test -race -count=1 ./...
+          '
