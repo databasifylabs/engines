@@ -1,8 +1,12 @@
 # Databasify engines
 
-Database engine images for [Databasify](https://github.com/databasifylabs/databasify): the official PostgreSQL, MySQL, MariaDB, Redis and Valkey images, extended with the tools each engine needs for high availability and backups, plus `databasify`, a small Go supervisor that runs as PID 1.
+Database engine images for [Databasify](https://github.com/databasifylabs/databasify): the official PostgreSQL, MySQL, MariaDB, MongoDB, Redis and Valkey images, extended with the tools each engine needs for high availability and backups, plus `databasify`, a small Go supervisor that runs as PID 1.
 
 Images are published to `ghcr.io/databasifylabs/databasify-<engine>`.
+
+## Licenses
+
+The images extend the official images and keep each engine's own license: PostgreSQL License, GPLv2 (MySQL, MariaDB), SSPL (MongoDB), RSALv2/SSPLv1/AGPLv3 (Redis) and BSD-3 (Valkey). The MongoDB images also carry Percona Backup for MongoDB (Apache-2.0), built from source.
 
 ## Tags
 
