@@ -4,7 +4,7 @@ ready() { [ "$(shell 'db.runCommand({ ping: 1 }).ok' 2> /dev/null)" = 1 ]; }
 for _ in $(seq 60); do ready && break; sleep 1; done
 ready
 [ "$(shell 'db.version()')" = "$DATABASIFY_RELEASE" ]
-[ "$(shell 'db.serverStatus().tcmalloc.usingPerCPUCaches')" = false ]
+[ "$(shell 'db.serverStatus().tcmalloc.usingPerCPUCaches ?? false')" = false ]
 shell 'rs.initiate({ _id: "smoke", members: [{ _id: 0, host: "127.0.0.1:57017" }] }).ok' > /dev/null
 primary() { [ "$(shell 'db.hello().isWritablePrimary')" = true ]; }
 for _ in $(seq 60); do primary && break; sleep 1; done
