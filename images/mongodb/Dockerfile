@@ -64,7 +64,8 @@ LABEL org.opencontainers.image.source="https://github.com/databasifylabs/engines
       io.databasify.release="${RELEASE}" \
       io.databasify.wrapper="${WRAPPER_VERSION}"
 ENV DATABASIFY_ENGINE=mongodb \
-    DATABASIFY_RELEASE=${RELEASE}
+    DATABASIFY_RELEASE=${RELEASE} \
+    GLIBC_TUNABLES=glibc.pthread.rseq=1
 STOPSIGNAL SIGTERM
 ENTRYPOINT ["/usr/local/bin/databasify", "serve"]
 CMD []
