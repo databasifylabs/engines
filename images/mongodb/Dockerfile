@@ -28,6 +28,22 @@ RUN set -eux; \
             -o "/out/$tool" "./cmd/$tool"; \
     done
 
+FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS mongoshake
+ARG TARGETOS
+ARG TARGETARCH
+ARG MONGOSHAKE_VERSION
+ARG MONGOSHAKE_SHA256
+ARG MONGOSHAKE_UPGRADES
+WORKDIR /src
+RUN set -eux; \
+    curl -fsSL -o /tmp/mongoshake.tar.gz "https://github.com/alibaba/MongoShake/archive/refs/tags/release-v${MONGOSHAKE_VERSION}.tar.gz"; \
+    echo "${MONGOSHAKE_SHA256}  /tmp/mongoshake.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/mongoshake.tar.gz --strip-components=1; \
+    if [ -n "$MONGOSHAKE_UPGRADES" ]; then go get $MONGOSHAKE_UPGRADES; fi; \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
+        -ldflags "-s -w -X github.com/alibaba/MongoShake/v2/common.BRANCH=v${MONGOSHAKE_VERSION}" \
+        -o /out/mongoshake ./cmd/collector
+
 FROM ${BASE_IMAGE}
 ARG RELEASE
 ARG WRAPPER_VERSION
@@ -37,6 +53,7 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends $PACKAGES; \
     rm -rf /var/lib/apt/lists/* /usr/local/bin/gosu
 COPY --from=pbm /out/pbm /out/pbm-agent /usr/local/bin/
+COPY --from=mongoshake /out/mongoshake /usr/local/bin/mongoshake
 RUN set -eux; \
     groupmod -g 64999 mongodb; \
     usermod -u 64999 -g 64999 mongodb; \

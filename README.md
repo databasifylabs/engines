@@ -6,7 +6,7 @@ Images are published to `ghcr.io/databasifylabs/databasify-<engine>`.
 
 ## Licenses
 
-The images extend the official images and keep each engine's own license: PostgreSQL License, GPLv2 (MySQL, MariaDB), SSPL (MongoDB), RSALv2/SSPLv1/AGPLv3 (Redis) and BSD-3 (Valkey). The MongoDB images also carry Percona Backup for MongoDB (Apache-2.0), built from source.
+The images extend the official images and keep each engine's own license: PostgreSQL License, GPLv2 (MySQL, MariaDB), SSPL (MongoDB), RSALv2/SSPLv1/AGPLv3 (Redis) and BSD-3 (Valkey). The MongoDB images also carry Percona Backup for MongoDB (Apache-2.0) and MongoShake (GPL-3.0), both built from source.
 
 ## Tags
 

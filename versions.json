@@ -226,6 +226,16 @@
         "pbm": {
           "version": "2.17.0",
           "sha256": "4cc40bdcf0a1b491fc819d795818bc3140fa13d5dc938379bd2cb8f4dc55f795"
+        },
+        "mongoshake": {
+          "version": "2.8.9-20261019",
+          "sha256": "5a40026261a2d3f909f88edbf190b84aef7e326e335dbc60c23ea90b49e8eff6",
+          "upgrades": [
+            "github.com/klauspost/compress@v1.18.7",
+            "golang.org/x/crypto@v0.57.0",
+            "golang.org/x/net@v0.60.0",
+            "golang.org/x/text@v0.42.0"
+          ]
         }
       }
     },
@@ -247,6 +257,16 @@
         "pbm": {
           "version": "2.17.0",
           "sha256": "4cc40bdcf0a1b491fc819d795818bc3140fa13d5dc938379bd2cb8f4dc55f795"
+        },
+        "mongoshake": {
+          "version": "2.8.9-20261019",
+          "sha256": "5a40026261a2d3f909f88edbf190b84aef7e326e335dbc60c23ea90b49e8eff6",
+          "upgrades": [
+            "github.com/klauspost/compress@v1.18.7",
+            "golang.org/x/crypto@v0.57.0",
+            "golang.org/x/net@v0.60.0",
+            "golang.org/x/text@v0.42.0"
+          ]
         }
       }
     }

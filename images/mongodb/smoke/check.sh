@@ -14,6 +14,7 @@ databasify ctl is-active --quiet server.service
 databasify ctl logs -u server -n 3
 pbm version --short
 pbm-agent version --short
+mongoshake --version
 mongodump --version | sed -n 1p
 echo "mongodb $DATABASIFY_RELEASE answered through the wrapper as a one-member replica set"
 [ "$(id -u mongodb)" = 64999 ] && [ "$(id -g mongodb)" = 64999 ]
