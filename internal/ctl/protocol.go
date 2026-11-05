@@ -103,6 +103,7 @@ type Controller interface {
 	ReloadManifest() error
 	RunTransient(t Transient) (Status, error)
 	Status(name string) Status
+	Processes() []string
 }
 
 func UnitName(name string) string {

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -39,6 +40,7 @@ func (h *harness) start() {
 		Clock:       h.clock,
 		MaxBackoff:  400 * time.Millisecond,
 		StableAfter: time.Hour,
+		StopResend:  100 * time.Millisecond,
 	})
 	h.supervisor.Boot()
 	h.t.Cleanup(h.supervisor.Shutdown)
@@ -252,6 +254,37 @@ func TestStopEscalatesToKillAfterTimeout(t *testing.T) {
 	}
 	if status := h.status("stubborn"); status.ActiveState != "inactive" || status.ExecMainStatus != 9 {
 		t.Fatalf("status = %+v", status)
+	}
+}
+
+func TestStopResendsTheStopSignalUntilTheProcessExits(t *testing.T) {
+	refuseOnce := "trap 'if [ -f $DIR/refused ]; then exit 0; fi; touch $DIR/refused' TERM; touch $DIR/ready; while :; do sleep 0.05; done"
+	h := boot(t, manifestOf(entry("redis", refuseOnce, `,"stopTimeout":"5s","enabled":true`)))
+	h.waitFor("traps to be set", func() bool { return fileExists(h, "ready") })
+
+	began := time.Now()
+	if err := h.supervisor.Stop("redis", true); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(began); elapsed >= 5*time.Second {
+		t.Fatalf("stopped after %s, only by the stop timeout", elapsed)
+	}
+	if !fileExists(h, "refused") {
+		t.Fatal("the first stop signal never reached the process")
+	}
+	if status := h.status("redis"); status.ActiveState != "inactive" || status.ExecMainStatus != 0 {
+		t.Fatalf("status = %+v", status)
+	}
+}
+
+func TestProcessesListsTheManifestInStartOrder(t *testing.T) {
+	h := boot(t, manifestOf(
+		entry("app", idle, `,"after":["migrate"]`),
+		entry("migrate", "true", `,"type":"oneshot"`),
+	))
+
+	if got := h.supervisor.Processes(); !slices.Equal(got, []string{"migrate", "app"}) {
+		t.Fatalf("processes = %v", got)
 	}
 }
 

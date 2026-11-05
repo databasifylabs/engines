@@ -1,11 +1,15 @@
 package ctl
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 var ErrUnavailable = errors.New("supervisor is not running")
@@ -62,7 +66,9 @@ func (c CLI) Run(args []string) int {
 }
 
 func (c CLI) showLogs(query LogQuery) int {
-	if err := ShowLogs(c.LogFile(query.Unit), query, c.Stdout); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := ShowLogs(ctx, c.LogFile(query.Unit), query, c.Stdout); err != nil {
 		fmt.Fprintf(c.Stderr, "databasify ctl: %v\n", err)
 
 		return ExitInternal

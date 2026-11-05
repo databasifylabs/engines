@@ -2,6 +2,7 @@ package supervise
 
 import (
 	"path"
+	"slices"
 	"syscall"
 
 	"github.com/databasifylabs/engines/internal/ctl"
@@ -180,4 +181,11 @@ func (s *Supervisor) Status(name string) ctl.Status {
 	}
 
 	return ctl.Missing(name)
+}
+
+func (s *Supervisor) Processes() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return slices.Clone(s.order)
 }

@@ -51,6 +51,10 @@ func TestParseSystemctlStyleCommands(t *testing.T) {
 			[]string{"daemon-reload"},
 			Request{Verb: "daemon-reload"},
 		},
+		"status of every process": {
+			[]string{"status", "--no-pager"},
+			Request{Verb: "status"},
+		},
 		"run-schedule": {
 			[]string{"run-schedule", "databasify-postgres-backup"},
 			Request{Verb: "run-schedule", Units: []string{"databasify-postgres-backup"}},
@@ -112,6 +116,14 @@ func TestParseJournalctlStyleCommand(t *testing.T) {
 	if err != nil || *command.Logs != (LogQuery{Unit: "mysql", Lines: 20, Output: "short-iso"}) {
 		t.Fatalf("got %+v, %v", command.Logs, err)
 	}
+	command, err = Parse([]string{"logs", "redis.service", "-n", "50", "-f"})
+	if err != nil || *command.Logs != (LogQuery{Unit: "redis", Lines: 50, Output: "short-iso", Follow: true}) {
+		t.Fatalf("got %+v, %v", command.Logs, err)
+	}
+	command, err = Parse([]string{"logs", "--follow", "redis"})
+	if err != nil || *command.Logs != (LogQuery{Unit: "redis", Lines: 10, Output: "short-iso", Follow: true}) {
+		t.Fatalf("got %+v, %v", command.Logs, err)
+	}
 }
 
 func TestParseRejectsBadUsage(t *testing.T) {
@@ -126,6 +138,7 @@ func TestParseRejectsBadUsage(t *testing.T) {
 		"run without argv":   {"run", "--unit=x"},
 		"run bad property":   {"run", "--unit=x", "-p", "MemoryMax=1G", "true"},
 		"logs without unit":  {"logs", "-n", "3"},
+		"logs two units":     {"logs", "redis", "valkey"},
 		"logs bad lines":     {"logs", "-u", "x", "-n", "many"},
 		"logs bad output":    {"logs", "-u", "x", "-o", "json"},
 		"two schedule names": {"run-schedule", "a", "b"},

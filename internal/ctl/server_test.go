@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
+	"time"
 )
 
 type fakeController struct {
@@ -79,6 +81,8 @@ func (f *fakeController) Status(name string) Status {
 
 	return Missing(name)
 }
+
+func (f *fakeController) Processes() []string { return []string{"postgres", "backup"} }
 
 func newFake() *fakeController {
 	return &fakeController{statuses: map[string]Status{
@@ -153,6 +157,15 @@ func TestActionsMapErrorsToSystemctlExitCodes(t *testing.T) {
 	}
 	if fake.lastSignal != syscall.SIGKILL {
 		t.Errorf("kill sent %v", fake.lastSignal)
+	}
+}
+
+func TestStatusWithoutUnitsListsEveryProcess(t *testing.T) {
+	response := handle(newFake(), "status")
+	want := "● postgres.service enabled, active (running), pid 42, 1 restarts, result success\n" +
+		"● backup.service disabled, failed (failed), pid 0, 0 restarts, result exit-code\n"
+	if response.Stdout != want || response.Exit != 0 {
+		t.Fatalf("got %q exit %d", response.Stdout, response.Exit)
 	}
 }
 
@@ -239,8 +252,81 @@ func TestLogsReadAcrossRotations(t *testing.T) {
 		t.Fatalf("short-iso output = %q", out.String())
 	}
 	out.Reset()
+	cli.Run([]string{"logs", "valkey-migration.service", "-n", "1", "-o", "cat"})
+	if out.String() != "syncing aof, diff=[0]\n" {
+		t.Fatalf("positional unit output = %q", out.String())
+	}
+	out.Reset()
 	cli.Run([]string{"logs", "-u", "nothing"})
 	if out.String() != "-- No entries --\n" {
 		t.Fatalf("empty output = %q", out.String())
+	}
+}
+
+func TestLogsFollowAcrossRotation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "redis.log")
+	if err := os.WriteFile(path, []byte("2026-10-27T10:00:00Z old\n2026-10-27T10:00:01Z recent\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := &lockedBuffer{}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- ShowLogs(ctx, path, LogQuery{Unit: "redis", Lines: 1, Output: "cat", Follow: true}, out)
+	}()
+
+	waitForOutput(t, out, "recent\n")
+	appendTo(t, path, "2026-10-27T10:00:02Z appended\n")
+	waitForOutput(t, out, "recent\nappended\n")
+	if err := os.Rename(path, path+".1"); err != nil {
+		t.Fatal(err)
+	}
+	appendTo(t, path, "2026-10-27T10:00:03Z rotated\n")
+	waitForOutput(t, out, "recent\nappended\nrotated\n")
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+type lockedBuffer struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(data []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buffer.Write(data)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buffer.String()
+}
+
+func appendTo(t *testing.T, path, text string) {
+	t.Helper()
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	if _, err := file.WriteString(text); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func waitForOutput(t *testing.T, out *lockedBuffer, want string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for out.String() != want {
+		if time.Now().After(deadline) {
+			t.Fatalf("output = %q, want %q", out.String(), want)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

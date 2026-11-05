@@ -96,18 +96,26 @@ func (s *Supervisor) terminate(u *unit, spec spec, proc *process) exitStatus {
 	s.mu.Lock()
 	u.transition("deactivating", "stop-sigterm")
 	s.mu.Unlock()
-	s.logs.event(u.name, "stopping with %s", manifest.SignalName(spec.stopSignal))
+	signal := manifest.SignalName(spec.stopSignal)
+	s.logs.event(u.name, "stopping with %s", signal)
 	proc.signal(spec.stopSignal)
-	timer := time.NewTimer(spec.stopTimeout)
-	defer timer.Stop()
-	select {
-	case status := <-proc.exited:
-		return status
-	case <-timer.C:
-		s.logs.event(u.name, "did not stop within %s, killing", spec.stopTimeout)
-		proc.signalGroup(syscall.SIGKILL)
+	deadline := time.NewTimer(spec.stopTimeout)
+	defer deadline.Stop()
+	resend := time.NewTicker(s.stopResend)
+	defer resend.Stop()
+	for {
+		select {
+		case status := <-proc.exited:
+			return status
+		case <-resend.C:
+			s.logs.event(u.name, "still running, sending %s again", signal)
+			proc.signal(spec.stopSignal)
+		case <-deadline.C:
+			s.logs.event(u.name, "did not stop within %s, killing", spec.stopTimeout)
+			proc.signalGroup(syscall.SIGKILL)
 
-		return <-proc.exited
+			return <-proc.exited
+		}
 	}
 }
 

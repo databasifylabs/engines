@@ -16,6 +16,7 @@ type LogQuery struct {
 	Unit   string
 	Lines  int
 	Output string
+	Follow bool
 }
 
 type UsageError struct {
@@ -40,7 +41,7 @@ var unitCounts = map[string][2]int{
 	"is-active":     {1, -1},
 	"is-failed":     {1, -1},
 	"show":          {1, -1},
-	"status":        {1, -1},
+	"status":        {0, -1},
 	"kill":          {1, -1},
 	"mask":          {1, -1},
 	"unmask":        {1, -1},
@@ -210,27 +211,51 @@ func applyRunValue(transient *Transient, name, value string) error {
 }
 
 func parseLogs(args *arguments) (*LogQuery, error) {
-	query := &LogQuery{Output: "short-iso"}
+	query := &LogQuery{Lines: -1, Output: "short-iso"}
 	for args.more() {
 		arg := args.next()
-		if !isFlag(arg) {
-			return nil, usage("logs: unexpected argument %s", arg)
-		}
-		if err := applyLogsFlag(query, arg, args); err != nil {
+		if err := applyLogsArgument(query, arg, args); err != nil {
 			return nil, err
 		}
 	}
 	if query.Unit == "" {
-		return nil, usage("logs: --unit is required")
+		return nil, usage("logs: a unit is required")
+	}
+	if query.Lines < 0 {
+		query.Lines = defaultLinesOf(query.Follow)
 	}
 
 	return query, nil
+}
+
+func applyLogsArgument(query *LogQuery, arg string, args *arguments) error {
+	if isFlag(arg) {
+		return applyLogsFlag(query, arg, args)
+	}
+	if query.Unit != "" {
+		return usage("logs: unexpected argument %s", arg)
+	}
+	query.Unit = UnitName(arg)
+
+	return nil
+}
+
+func defaultLinesOf(follow bool) int {
+	if follow {
+		return 10
+	}
+
+	return 0
 }
 
 func applyLogsFlag(query *LogQuery, arg string, args *arguments) error {
 	name, inline, hasInline := splitFlag(arg)
 	switch name {
 	case "--no-pager", "-q", "--quiet":
+		return nil
+	case "-f", "--follow":
+		query.Follow = true
+
 		return nil
 	case "-u", "--unit", "-n", "--lines", "-o", "--output":
 	default:

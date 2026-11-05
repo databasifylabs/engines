@@ -18,6 +18,7 @@ type Options struct {
 	Clock       Clock
 	MaxBackoff  time.Duration
 	StableAfter time.Duration
+	StopResend  time.Duration
 	LogMaxSize  int64
 }
 
@@ -26,6 +27,7 @@ type Supervisor struct {
 	clock       Clock
 	maxBackoff  time.Duration
 	stableAfter time.Duration
+	stopResend  time.Duration
 	reaper      *reaper
 	logs        *logSink
 	stopReaper  context.CancelFunc
@@ -43,6 +45,7 @@ func New(options Options) *Supervisor {
 		clock:         cmp.Or[Clock](options.Clock, realClock{}),
 		maxBackoff:    cmp.Or(options.MaxBackoff, 30*time.Second),
 		stableAfter:   cmp.Or(options.StableAfter, 30*time.Second),
+		stopResend:    cmp.Or(options.StopResend, 5*time.Second),
 		reaper:        newReaper(),
 		logs:          newLogSink(options.Layout.Logs(), cmp.Or(options.LogMaxSize, layout.LogMaxSize), options.Console),
 		units:         map[string]*unit{},

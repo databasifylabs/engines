@@ -2,12 +2,14 @@ package ctl
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/databasifylabs/engines/internal/layout"
 )
@@ -59,7 +61,29 @@ func tailOf(path string, count int) ([]string, error) {
 	return lines, scanner.Err()
 }
 
-func ShowLogs(path string, query LogQuery, out io.Writer) error {
+const followEvery = 200 * time.Millisecond
+
+func ShowLogs(ctx context.Context, path string, query LogQuery, out io.Writer) error {
+	var tail *follower
+	if query.Follow {
+		tail = followerAtEndOf(path)
+		defer tail.close()
+	}
+	if err := showRecent(path, query, out); err != nil {
+		return err
+	}
+	if tail == nil {
+		return nil
+	}
+
+	return tail.follow(ctx, func(line string) error {
+		_, err := fmt.Fprintln(out, formatLine(query.Unit, line, query.Output))
+
+		return err
+	})
+}
+
+func showRecent(path string, query LogQuery, out io.Writer) error {
 	lines, err := Tail(path, query.Lines)
 	if err != nil {
 		return err
@@ -76,6 +100,102 @@ func ShowLogs(path string, query LogQuery, out io.Writer) error {
 	}
 
 	return nil
+}
+
+type follower struct {
+	path    string
+	file    *os.File
+	reader  *bufio.Reader
+	pending string
+}
+
+func followerAtEndOf(path string) *follower {
+	f := &follower{path: path}
+	f.open(io.SeekEnd)
+
+	return f
+}
+
+func (f *follower) follow(ctx context.Context, emit func(string) error) error {
+	ticker := time.NewTicker(followEvery)
+	defer ticker.Stop()
+	for {
+		if err := f.poll(emit); err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+	}
+}
+
+func (f *follower) poll(emit func(string) error) error {
+	if f.file == nil {
+		f.open(io.SeekStart)
+	}
+	if err := f.drain(emit); err != nil {
+		return err
+	}
+	if !f.rotated() {
+		return nil
+	}
+	f.close()
+	f.open(io.SeekStart)
+
+	return f.drain(emit)
+}
+
+func (f *follower) open(whence int) {
+	file, err := os.Open(f.path)
+	if err != nil {
+		return
+	}
+	if _, err := file.Seek(0, whence); err != nil {
+		_ = file.Close()
+
+		return
+	}
+	f.file, f.reader = file, bufio.NewReader(file)
+}
+
+func (f *follower) drain(emit func(string) error) error {
+	if f.file == nil {
+		return nil
+	}
+	for {
+		chunk, err := f.reader.ReadString('\n')
+		f.pending += chunk
+		if err != nil {
+			return nil
+		}
+		line := strings.TrimSuffix(f.pending, "\n")
+		f.pending = ""
+		if err := emit(line); err != nil {
+			return err
+		}
+	}
+}
+
+func (f *follower) rotated() bool {
+	if f.file == nil {
+		return false
+	}
+	current, err := os.Stat(f.path)
+	if err != nil {
+		return false
+	}
+	opened, err := f.file.Stat()
+
+	return err == nil && !os.SameFile(current, opened)
+}
+
+func (f *follower) close() {
+	if f.file != nil {
+		_ = f.file.Close()
+		f.file = nil
+	}
 }
 
 func formatLine(unit, line, output string) string {

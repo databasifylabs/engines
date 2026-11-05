@@ -196,6 +196,11 @@ func (s *Server) show(r *reply, request Request) {
 }
 
 func (s *Server) status(r *reply, units []string) {
+	if len(units) == 0 {
+		s.listProcesses(r)
+
+		return
+	}
 	for _, name := range units {
 		status := s.controller.Status(name)
 		if !status.Loaded {
@@ -212,6 +217,17 @@ func (s *Server) status(r *reply, units []string) {
 			r.exit = 3
 		}
 	}
+}
+
+func (s *Server) listProcesses(r *reply) {
+	for _, name := range s.controller.Processes() {
+		r.say(false, "%s", summarize(s.controller.Status(name)))
+	}
+}
+
+func summarize(status Status) string {
+	return fmt.Sprintf("● %s.service %s, %s (%s), pid %d, %d restarts, result %s\n",
+		status.Name, status.Property("UnitFileState"), status.ActiveState, status.SubState, status.MainPID, status.NRestarts, status.Result)
 }
 
 func describe(status Status) string {
