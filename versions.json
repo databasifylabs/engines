@@ -172,8 +172,8 @@
       },
       "sources": {
         "redis-shake": {
-          "version": "4.6.2",
-          "sha256": "c6c7de3a76b7bf4f18e494ffb40f1d09287622c4574d4da41fc1244a2dcc0b3f",
+          "version": "4.7.0",
+          "sha256": "c3e9802027d1284ca6f2ae15aee3406ba5ce714f117798c6baabdf8bf7c67275",
           "upgrades": [
             "golang.org/x/text@v0.41.0"
           ]
@@ -202,8 +202,8 @@
       },
       "sources": {
         "redis-shake": {
-          "version": "4.6.2",
-          "sha256": "c6c7de3a76b7bf4f18e494ffb40f1d09287622c4574d4da41fc1244a2dcc0b3f",
+          "version": "4.7.0",
+          "sha256": "c3e9802027d1284ca6f2ae15aee3406ba5ce714f117798c6baabdf8bf7c67275",
           "upgrades": [
             "golang.org/x/text@v0.41.0"
           ]
@@ -232,8 +232,8 @@
       },
       "sources": {
         "redis-shake": {
-          "version": "4.6.2",
-          "sha256": "c6c7de3a76b7bf4f18e494ffb40f1d09287622c4574d4da41fc1244a2dcc0b3f",
+          "version": "4.7.0",
+          "sha256": "c3e9802027d1284ca6f2ae15aee3406ba5ce714f117798c6baabdf8bf7c67275",
           "upgrades": [
             "golang.org/x/text@v0.41.0"
           ]
