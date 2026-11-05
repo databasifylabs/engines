@@ -29,8 +29,9 @@ ARG RELEASE
 WORKDIR /build
 RUN set -eux; \
     arch=$(uname -m); \
+    line=${RELEASE%.*}; \
     rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-mysql; \
-    curl -fsSLO "https://repo.mysql.com/yum/mysql-8.4-community/el/9/${arch}/mysql-community-client-${RELEASE}-1.el9.${arch}.rpm"; \
+    curl -fsSLO "https://repo.mysql.com/yum/mysql-${line}-community/el/9/${arch}/mysql-community-client-${RELEASE}-1.el9.${arch}.rpm"; \
     rpm -K "mysql-community-client-${RELEASE}-1.el9.${arch}.rpm" | grep -q 'digests signatures OK'; \
     microdnf install -y --setopt=install_weak_deps=0 cpio; \
     rpm2cpio "mysql-community-client-${RELEASE}-1.el9.${arch}.rpm" | cpio -idm ./usr/bin/mysqlbinlog; \
