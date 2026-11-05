@@ -7,6 +7,9 @@ databasify ctl is-active --quiet server.service
 [ "$(databasify ctl show -p NRestarts --value server)" = 0 ]
 databasify ctl logs -u server -n 3
 xtrabackup --version 2>&1 | tail -1
+xtrabackup --backup --stream=xbstream --target-dir=/tmp/xtrabackup --datadir=/srv/mysql/data --socket=/srv/mysql/run/mysqld.sock -uroot 2> /tmp/xtrabackup.log > /dev/null \
+    || { tail -20 /tmp/xtrabackup.log; exit 1; }
+echo "xtrabackup streamed a backup of mysql $DATABASIFY_RELEASE"
 mysqlbinlog --version | grep -F "Ver $DATABASIFY_RELEASE "
 mysqlsh --version
 rclone version | sed -n 1p

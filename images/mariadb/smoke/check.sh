@@ -7,6 +7,9 @@ databasify ctl is-active --quiet server.service
 [ "$(databasify ctl show -p NRestarts --value server)" = 0 ]
 databasify ctl logs -u server -n 3
 mariadb-backup --version 2>&1 | tail -1
+mariadb-backup --backup --stream=xbstream --target-dir=/tmp/mariadb-backup --datadir=/srv/mariadb/data --socket=/srv/mariadb/run/mariadbd.sock -uroot 2> /tmp/mariadb-backup.log > /dev/null \
+    || { tail -20 /tmp/mariadb-backup.log; exit 1; }
+echo "mariadb-backup streamed a backup of mariadb $DATABASIFY_RELEASE"
 test -f /usr/lib/galera/libgalera_smm.so
 rclone version | sed -n 1p
 socat -V | sed -n 2p
